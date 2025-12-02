@@ -1,29 +1,46 @@
 import Foundation
 
-enum ColimaStatus: Equatable {
-    case running
-    case stopped
-    case checking
-    case starting
-    case stopping
+enum ColimaStatus: String, Equatable {
+    case running = "Running"
+    case stopped = "Stopped"
+    case starting = "Starting..."
+    case stopping = "Stopping..."
+    case unknown = "Unknown"
 
-    var displayName: String {
-        switch self {
-        case .running: return "Running"
-        case .stopped: return "Stopped"
-        case .checking: return "Checking..."
-        case .starting: return "Starting..."
-        case .stopping: return "Stopping..."
-        }
+    var isRunning: Bool { self == .running }
+    var isStopped: Bool { self == .stopped }
+    var isTransitioning: Bool { self == .starting || self == .stopping }
+}
+
+struct ColimaInstance: Identifiable, Equatable {
+    let id: String
+    let name: String
+    var status: ColimaStatus
+    let arch: String
+    let cpus: Int
+    let memory: UInt64
+    let disk: UInt64
+
+    var memoryFormatted: String {
+        ByteCountFormatter.string(fromByteCount: Int64(memory), countStyle: .memory)
+    }
+
+    var diskFormatted: String {
+        ByteCountFormatter.string(fromByteCount: Int64(disk), countStyle: .file)
     }
 }
 
 @MainActor
 final class ColimaManager: ObservableObject {
-    @Published private(set) var status: ColimaStatus = .checking
+    @Published private(set) var instances: [ColimaInstance] = []
+    @Published private(set) var isLoading = true
 
     private let colimaPath: String
     private var statusCheckTimer: Timer?
+
+    var hasRunningInstance: Bool {
+        instances.contains { $0.status.isRunning }
+    }
 
     init() {
         self.colimaPath = Self.findColimaPath()
@@ -51,57 +68,86 @@ final class ColimaManager: ObservableObject {
     }
 
     func startStatusChecking() {
-        checkStatus()
+        refreshInstances()
         statusCheckTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                await self?.checkStatusIfIdle()
+                self?.refreshIfIdle()
             }
         }
     }
 
-    private func checkStatusIfIdle() async {
-        guard status == .running || status == .stopped || status == .checking else {
-            return
+    private func refreshIfIdle() {
+        let hasTransitioning = instances.contains { $0.status.isTransitioning }
+        if !hasTransitioning {
+            refreshInstances()
         }
-        checkStatus()
     }
 
-    func checkStatus() {
+    func refreshInstances() {
         Task {
-            let result = await runCommand([colimaPath, "status"])
+            let result = await runCommand([colimaPath, "ls", "--json"])
             if result.exitCode == 0 {
-                status = .running
-            } else {
-                status = .stopped
+                let parsed = parseInstancesJSON(result.output)
+                instances = parsed
             }
+            isLoading = false
         }
     }
 
-    func start() {
-        guard status == .stopped else { return }
-        status = .starting
+    private func parseInstancesJSON(_ output: String) -> [ColimaInstance] {
+        var results: [ColimaInstance] = []
+
+        for line in output.components(separatedBy: .newlines) where !line.isEmpty {
+            guard let data = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let name = json["name"] as? String,
+                  let statusStr = json["status"] as? String else {
+                continue
+            }
+
+            let status: ColimaStatus
+            switch statusStr.lowercased() {
+            case "running": status = .running
+            case "stopped": status = .stopped
+            default: status = .unknown
+            }
+
+            let instance = ColimaInstance(
+                id: name,
+                name: name,
+                status: status,
+                arch: json["arch"] as? String ?? "unknown",
+                cpus: json["cpus"] as? Int ?? 0,
+                memory: json["memory"] as? UInt64 ?? 0,
+                disk: json["disk"] as? UInt64 ?? 0
+            )
+            results.append(instance)
+        }
+
+        return results
+    }
+
+    func start(profile: String) {
+        guard let index = instances.firstIndex(where: { $0.name == profile }),
+              instances[index].status.isStopped else { return }
+
+        instances[index].status = .starting
 
         Task {
-            let result = await runCommand([colimaPath, "start"])
-            if result.exitCode == 0 {
-                status = .running
-            } else {
-                status = .stopped
-            }
+            let result = await runCommand([colimaPath, "start", "-p", profile])
+            instances[index].status = result.exitCode == 0 ? .running : .stopped
         }
     }
 
-    func stop() {
-        guard status == .running else { return }
-        status = .stopping
+    func stop(profile: String) {
+        guard let index = instances.firstIndex(where: { $0.name == profile }),
+              instances[index].status.isRunning else { return }
+
+        instances[index].status = .stopping
 
         Task {
-            let result = await runCommand([colimaPath, "stop"])
-            if result.exitCode == 0 {
-                status = .stopped
-            } else {
-                status = .running
-            }
+            let result = await runCommand([colimaPath, "stop", "-p", profile])
+            instances[index].status = result.exitCode == 0 ? .stopped : .running
         }
     }
 
@@ -116,7 +162,6 @@ final class ColimaManager: ObservableObject {
                 process.standardOutput = pipe
                 process.standardError = pipe
 
-                // Set PATH to include homebrew
                 var environment = ProcessInfo.processInfo.environment
                 environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
                 process.environment = environment

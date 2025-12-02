@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 @main
 struct ColimaBarApp: App {
@@ -16,7 +17,7 @@ struct ColimaBarApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var colimaManager: ColimaManager!
-    private var statusObservation: NSKeyValueObservation?
+    private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         colimaManager = ColimaManager()
@@ -24,13 +25,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupMenu()
 
-        // Observe status changes
-        Task {
-            for await _ in colimaManager.$status.values {
-                updateStatusIcon()
-                setupMenu()
+        colimaManager.$instances
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateStatusIcon()
+                self?.setupMenu()
             }
-        }
+            .store(in: &cancellables)
     }
 
     private func setupStatusItem() {
@@ -41,22 +42,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateStatusIcon() {
         guard let button = statusItem.button else { return }
 
+        let hasRunning = colimaManager.hasRunningInstance
+        let hasTransitioning = colimaManager.instances.contains { $0.status.isTransitioning }
+
         let symbolName: String
         let accessibilityLabel: String
 
-        switch colimaManager.status {
-        case .running:
+        if hasTransitioning {
+            symbolName = "shippingbox.and.arrow.backward.fill"
+            accessibilityLabel = "Colima Transitioning"
+        } else if hasRunning {
             symbolName = "shippingbox.fill"
             accessibilityLabel = "Colima Running"
-        case .stopped:
+        } else {
             symbolName = "shippingbox"
             accessibilityLabel = "Colima Stopped"
-        case .checking:
-            symbolName = "shippingbox.and.arrow.backward"
-            accessibilityLabel = "Checking Colima Status"
-        case .starting, .stopping:
-            symbolName = "shippingbox.and.arrow.backward.fill"
-            accessibilityLabel = "Colima \(colimaManager.status.displayName)"
         }
 
         if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityLabel) {
@@ -68,28 +68,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupMenu() {
         let menu = NSMenu()
 
-        // Status item
-        let statusMenuItem = NSMenuItem(title: "Status: \(colimaManager.status.displayName)", action: nil, keyEquivalent: "")
-        statusMenuItem.isEnabled = false
-        menu.addItem(statusMenuItem)
+        if colimaManager.instances.isEmpty {
+            let noInstancesItem = NSMenuItem(title: "No instances found", action: nil, keyEquivalent: "")
+            noInstancesItem.isEnabled = false
+            menu.addItem(noInstancesItem)
+        } else {
+            // Add each instance
+            for instance in colimaManager.instances {
+                let instanceMenu = NSMenu()
 
-        menu.addItem(NSMenuItem.separator())
+                // Info items
+                let statusInfo = NSMenuItem(title: "Status: \(instance.status.rawValue)", action: nil, keyEquivalent: "")
+                statusInfo.isEnabled = false
+                instanceMenu.addItem(statusInfo)
 
-        // Start/Stop items
-        let startItem = NSMenuItem(title: "Start", action: #selector(startColima), keyEquivalent: "s")
-        startItem.target = self
-        startItem.isEnabled = colimaManager.status == .stopped
-        menu.addItem(startItem)
+                let archInfo = NSMenuItem(title: "Arch: \(instance.arch)", action: nil, keyEquivalent: "")
+                archInfo.isEnabled = false
+                instanceMenu.addItem(archInfo)
 
-        let stopItem = NSMenuItem(title: "Stop", action: #selector(stopColima), keyEquivalent: "x")
-        stopItem.target = self
-        stopItem.isEnabled = colimaManager.status == .running
-        menu.addItem(stopItem)
+                let cpuInfo = NSMenuItem(title: "CPUs: \(instance.cpus)", action: nil, keyEquivalent: "")
+                cpuInfo.isEnabled = false
+                instanceMenu.addItem(cpuInfo)
+
+                let memInfo = NSMenuItem(title: "Memory: \(instance.memoryFormatted)", action: nil, keyEquivalent: "")
+                memInfo.isEnabled = false
+                instanceMenu.addItem(memInfo)
+
+                let diskInfo = NSMenuItem(title: "Disk: \(instance.diskFormatted)", action: nil, keyEquivalent: "")
+                diskInfo.isEnabled = false
+                instanceMenu.addItem(diskInfo)
+
+                instanceMenu.addItem(NSMenuItem.separator())
+
+                // Start/Stop actions
+                let startItem = NSMenuItem(title: "Start", action: #selector(startInstance(_:)), keyEquivalent: "")
+                startItem.target = self
+                startItem.representedObject = instance.name
+                startItem.isEnabled = instance.status.isStopped
+                instanceMenu.addItem(startItem)
+
+                let stopItem = NSMenuItem(title: "Stop", action: #selector(stopInstance(_:)), keyEquivalent: "")
+                stopItem.target = self
+                stopItem.representedObject = instance.name
+                stopItem.isEnabled = instance.status.isRunning
+                instanceMenu.addItem(stopItem)
+
+                // Instance header with submenu
+                let statusIcon = instance.status.isRunning ? "●" : "○"
+                let instanceItem = NSMenuItem(title: "\(statusIcon) \(instance.name)", action: nil, keyEquivalent: "")
+                instanceItem.submenu = instanceMenu
+                menu.addItem(instanceItem)
+            }
+        }
 
         menu.addItem(NSMenuItem.separator())
 
         // Refresh
-        let refreshItem = NSMenuItem(title: "Refresh Status", action: #selector(refreshStatus), keyEquivalent: "r")
+        let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refreshStatus), keyEquivalent: "r")
         refreshItem.target = self
         menu.addItem(refreshItem)
 
@@ -103,16 +138,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    @objc private func startColima() {
-        colimaManager.start()
+    @objc private func startInstance(_ sender: NSMenuItem) {
+        guard let profile = sender.representedObject as? String else { return }
+        colimaManager.start(profile: profile)
     }
 
-    @objc private func stopColima() {
-        colimaManager.stop()
+    @objc private func stopInstance(_ sender: NSMenuItem) {
+        guard let profile = sender.representedObject as? String else { return }
+        colimaManager.stop(profile: profile)
     }
 
     @objc private func refreshStatus() {
-        colimaManager.checkStatus()
+        colimaManager.refreshInstances()
     }
 
     @objc private func quitApp() {
