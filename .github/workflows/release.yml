@@ -56,9 +56,19 @@ jobs:
 
           echo "DMG_NAME=$DMG_NAME" >> $GITHUB_ENV
 
-      - name: Upload Release Asset
+      - name: Create ZIP
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          ZIP_NAME="ColimaBar-${VERSION}.zip"
+          zip "$ZIP_NAME" "$DMG_NAME"
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+
+      - name: Upload Release Assets
         uses: softprops/action-gh-release@v1
         with:
-          files: ${{ env.DMG_NAME }}
+          files: |
+            ${{ env.DMG_NAME }}
+            ${{ env.ZIP_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
