@@ -2,10 +2,13 @@
 
 A native macOS menu bar app for [Colima](https://github.com/abiosoft/colima) - the container runtime for macOS.
 
+![ColimaBar Screenshot](docs/colimabar.png)
+
 ## Features
 
-- Shows Colima status in the menu bar
-- Start/Stop Colima with a click
+- Shows all Colima instances in the menu bar
+- Start/Stop each instance individually
+- View instance details (arch, CPUs, memory, disk)
 - Auto-refreshes status every 5 seconds
 - Lightweight, native Swift implementation
 
@@ -43,8 +46,9 @@ Once running, ColimaBar appears in your menu bar:
 - **Empty box icon** - Colima is stopped
 
 Click the icon to:
-- View current status
-- Start or Stop Colima
+- View all Colima instances
+- Expand instance submenu for details and controls
+- Start or Stop individual instances
 - Refresh status manually
 - Quit the app
 
@@ -52,8 +56,6 @@ Click the icon to:
 
 | Shortcut | Action |
 |----------|--------|
-| S | Start Colima |
-| X | Stop Colima |
 | R | Refresh Status |
 | Q | Quit |
 

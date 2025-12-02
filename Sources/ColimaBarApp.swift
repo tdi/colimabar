@@ -76,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Add each instance
             for instance in colimaManager.instances {
                 let instanceMenu = NSMenu()
+                instanceMenu.autoenablesItems = false
 
                 // Info items
                 let statusInfo = NSMenuItem(title: "Status: \(instance.status.rawValue)", action: nil, keyEquivalent: "")
@@ -101,17 +102,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 instanceMenu.addItem(NSMenuItem.separator())
 
                 // Start/Stop actions
-                let startItem = NSMenuItem(title: "Start", action: #selector(startInstance(_:)), keyEquivalent: "")
-                startItem.target = self
-                startItem.representedObject = instance.name
-                startItem.isEnabled = instance.status.isStopped
-                instanceMenu.addItem(startItem)
-
-                let stopItem = NSMenuItem(title: "Stop", action: #selector(stopInstance(_:)), keyEquivalent: "")
-                stopItem.target = self
-                stopItem.representedObject = instance.name
-                stopItem.isEnabled = instance.status.isRunning
-                instanceMenu.addItem(stopItem)
+                if instance.status.isStopped {
+                    let startItem = NSMenuItem(title: "Start", action: #selector(startInstance(_:)), keyEquivalent: "")
+                    startItem.target = self
+                    startItem.representedObject = instance.name
+                    instanceMenu.addItem(startItem)
+                } else if instance.status.isRunning {
+                    let stopItem = NSMenuItem(title: "Stop", action: #selector(stopInstance(_:)), keyEquivalent: "")
+                    stopItem.target = self
+                    stopItem.representedObject = instance.name
+                    instanceMenu.addItem(stopItem)
+                } else {
+                    let transitionItem = NSMenuItem(title: instance.status.rawValue, action: nil, keyEquivalent: "")
+                    transitionItem.isEnabled = false
+                    instanceMenu.addItem(transitionItem)
+                }
 
                 // Instance header with submenu
                 let statusIcon = instance.status.isRunning ? "●" : "○"
