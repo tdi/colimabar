@@ -16,5 +16,7 @@
     <string>13.0</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>ColimaBar opens Terminal to start an SSH session into your Colima instance.</string>
 </dict>
 </plist>
