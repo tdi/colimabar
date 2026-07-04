@@ -59,7 +59,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             accessibilityLabel = "Colima Stopped"
         }
 
-        if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityLabel) {
+        // Render the symbol at an explicit point size so it maps cleanly onto
+        // the menu bar's pixel grid. Without a configuration the symbol is drawn
+        // at its natural size and then downscaled by AppKit to fit the status
+        // bar; on non-Retina (1x) external displays that downscale misaligns the
+        // pixel grid and the icon looks blurry. See issue #2.
+        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityLabel)?
+            .withSymbolConfiguration(config) {
             image.isTemplate = true
             button.image = image
         }
