@@ -76,9 +76,28 @@ final class ColimaManager: ObservableObject {
         return "colima"
     }
 
+    /// Auto-refresh interval in seconds, persisted across launches.
+    /// Falls back to 5s when unset.
+    static let refreshIntervalKey = "refreshInterval"
+
+    var refreshInterval: TimeInterval {
+        let stored = UserDefaults.standard.double(forKey: Self.refreshIntervalKey)
+        return stored > 0 ? stored : 5.0
+    }
+
+    func setRefreshInterval(_ seconds: TimeInterval) {
+        UserDefaults.standard.set(seconds, forKey: Self.refreshIntervalKey)
+        scheduleTimer()
+    }
+
     func startStatusChecking() {
         refreshInstances()
-        statusCheckTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        scheduleTimer()
+    }
+
+    private func scheduleTimer() {
+        statusCheckTimer?.invalidate()
+        statusCheckTimer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.refreshIfIdle()
             }
@@ -192,6 +211,61 @@ final class ColimaManager: ObservableObject {
                 instances[idx].status = result.exitCode == 0 ? .stopped : .running
             }
             actionError = result.exitCode == 0 ? nil : "Failed to stop \(profile)"
+        }
+    }
+
+    func restart(profile: String) {
+        guard let index = instances.firstIndex(where: { $0.name == profile }),
+              instances[index].status.isRunning else { return }
+
+        instances[index].status = .starting
+
+        Task {
+            let result = await runCommand([colimaPath, "restart", "-p", profile])
+            if let idx = instances.firstIndex(where: { $0.name == profile }) {
+                instances[idx].status = result.exitCode == 0 ? .running : .stopped
+            }
+            actionError = result.exitCode == 0 ? nil : "Failed to restart \(profile)"
+        }
+    }
+
+    func startAll() {
+        for instance in instances where instance.status.isStopped {
+            start(profile: instance.name)
+        }
+    }
+
+    func stopAll() {
+        for instance in instances where instance.status.isRunning {
+            stop(profile: instance.name)
+        }
+    }
+
+    /// Create a new instance by starting a fresh profile with the given
+    /// resources. colima takes CPUs as a count and memory/disk in GiB.
+    func create(name: String, cpus: Int, memoryGiB: Int, diskGiB: Int) {
+        Task {
+            let result = await runCommand([
+                colimaPath, "start", "-p", name,
+                "--cpu", String(cpus),
+                "--memory", String(memoryGiB),
+                "--disk", String(diskGiB)
+            ])
+            actionError = result.exitCode == 0 ? nil : "Failed to create \(name)"
+            refreshInstances()
+        }
+    }
+
+    func delete(profile: String) {
+        Task {
+            let result = await runCommand([colimaPath, "delete", "-p", profile, "-f"])
+            if result.exitCode == 0 {
+                instances.removeAll { $0.name == profile }
+                actionError = nil
+            } else {
+                actionError = "Failed to delete \(profile)"
+            }
+            refreshInstances()
         }
     }
 
