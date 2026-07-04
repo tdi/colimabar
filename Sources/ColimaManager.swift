@@ -30,10 +30,19 @@ struct ColimaInstance: Identifiable, Equatable {
     }
 }
 
+enum LoadState: Equatable {
+    case loading
+    case loaded
+    case error(String)
+}
+
 @MainActor
 final class ColimaManager: ObservableObject {
     @Published private(set) var instances: [ColimaInstance] = []
-    @Published private(set) var isLoading = true
+    @Published private(set) var loadState: LoadState = .loading
+    /// Set when a start/stop command fails; cleared on the next successful
+    /// action or refresh. Surfaced in the menu so failures are not silent.
+    @Published private(set) var actionError: String?
 
     private let colimaPath: String
     private var statusCheckTimer: Timer?
@@ -87,10 +96,39 @@ final class ColimaManager: ObservableObject {
         Task {
             let result = await runCommand([colimaPath, "ls", "--json"])
             if result.exitCode == 0 {
-                let parsed = parseInstancesJSON(result.output)
-                instances = parsed
+                instances = merge(parsed: parseInstancesJSON(result.output))
+                loadState = .loaded
+                actionError = nil
+            } else {
+                loadState = .error(Self.friendlyError(from: result.output))
             }
-            isLoading = false
+        }
+    }
+
+    /// Turn raw command output into a short, user-facing message. `colima ls`
+    /// failing usually means colima is missing from PATH or not installed.
+    private static func friendlyError(from output: String) -> String {
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.lowercased().contains("no such file")
+            || trimmed.lowercased().contains("not found") {
+            return "Colima not found. Install with: brew install colima"
+        }
+        return trimmed
+    }
+
+    /// Preserve in-flight transition status when replacing the instance list.
+    /// colima reports the pre-transition status (Stopped/Running) while a
+    /// start/stop is running, so a refresh mid-transition would otherwise wipe
+    /// the .starting/.stopping overlay the UI depends on.
+    private func merge(parsed: [ColimaInstance]) -> [ColimaInstance] {
+        parsed.map { instance in
+            if let existing = instances.first(where: { $0.name == instance.name }),
+               existing.status.isTransitioning {
+                var updated = instance
+                updated.status = existing.status
+                return updated
+            }
+            return instance
         }
     }
 
@@ -117,9 +155,9 @@ final class ColimaManager: ObservableObject {
                 name: name,
                 status: status,
                 arch: json["arch"] as? String ?? "unknown",
-                cpus: json["cpus"] as? Int ?? 0,
-                memory: json["memory"] as? UInt64 ?? 0,
-                disk: json["disk"] as? UInt64 ?? 0
+                cpus: (json["cpus"] as? NSNumber)?.intValue ?? 0,
+                memory: (json["memory"] as? NSNumber)?.uint64Value ?? 0,
+                disk: (json["disk"] as? NSNumber)?.uint64Value ?? 0
             )
             results.append(instance)
         }
@@ -135,7 +173,10 @@ final class ColimaManager: ObservableObject {
 
         Task {
             let result = await runCommand([colimaPath, "start", "-p", profile])
-            instances[index].status = result.exitCode == 0 ? .running : .stopped
+            if let idx = instances.firstIndex(where: { $0.name == profile }) {
+                instances[idx].status = result.exitCode == 0 ? .running : .stopped
+            }
+            actionError = result.exitCode == 0 ? nil : "Failed to start \(profile)"
         }
     }
 
@@ -147,7 +188,10 @@ final class ColimaManager: ObservableObject {
 
         Task {
             let result = await runCommand([colimaPath, "stop", "-p", profile])
-            instances[index].status = result.exitCode == 0 ? .stopped : .running
+            if let idx = instances.firstIndex(where: { $0.name == profile }) {
+                instances[idx].status = result.exitCode == 0 ? .stopped : .running
+            }
+            actionError = result.exitCode == 0 ? nil : "Failed to stop \(profile)"
         }
     }
 

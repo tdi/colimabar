@@ -25,13 +25,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupMenu()
 
-        colimaManager.$instances
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.updateStatusIcon()
-                self?.setupMenu()
-            }
-            .store(in: &cancellables)
+        Publishers.MergeMany(
+            colimaManager.$instances.map { _ in () }.eraseToAnyPublisher(),
+            colimaManager.$loadState.map { _ in () }.eraseToAnyPublisher(),
+            colimaManager.$actionError.map { _ in () }.eraseToAnyPublisher()
+        )
+        .sink { [weak self] _ in
+            self?.updateStatusIcon()
+            self?.setupMenu()
+        }
+        .store(in: &cancellables)
     }
 
     private func setupStatusItem() {
@@ -75,6 +78,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupMenu() {
         let menu = NSMenu()
 
+        if let actionError = colimaManager.actionError {
+            let errorItem = NSMenuItem(title: "⚠ \(actionError)", action: nil, keyEquivalent: "")
+            errorItem.isEnabled = false
+            menu.addItem(errorItem)
+            menu.addItem(NSMenuItem.separator())
+        }
+
+        switch colimaManager.loadState {
+        case .loading where colimaManager.instances.isEmpty:
+            let loadingItem = NSMenuItem(title: "Loading…", action: nil, keyEquivalent: "")
+            loadingItem.isEnabled = false
+            menu.addItem(loadingItem)
+        case .error(let message):
+            let errorItem = NSMenuItem(title: message, action: nil, keyEquivalent: "")
+            errorItem.isEnabled = false
+            menu.addItem(errorItem)
+        case .loaded, .loading:
+            addInstanceItems(to: menu)
+        }
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Refresh
+        let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refreshStatus), keyEquivalent: "r")
+        refreshItem.target = self
+        menu.addItem(refreshItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Quit
+        let quitItem = NSMenuItem(title: "Quit ColimaBar", action: #selector(quitApp), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        statusItem.menu = menu
+    }
+
+    private func addInstanceItems(to menu: NSMenu) {
         if colimaManager.instances.isEmpty {
             let noInstancesItem = NSMenuItem(title: "No instances found", action: nil, keyEquivalent: "")
             noInstancesItem.isEnabled = false
@@ -132,22 +173,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 menu.addItem(instanceItem)
             }
         }
-
-        menu.addItem(NSMenuItem.separator())
-
-        // Refresh
-        let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refreshStatus), keyEquivalent: "r")
-        refreshItem.target = self
-        menu.addItem(refreshItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        // Quit
-        let quitItem = NSMenuItem(title: "Quit ColimaBar", action: #selector(quitApp), keyEquivalent: "q")
-        quitItem.target = self
-        menu.addItem(quitItem)
-
-        statusItem.menu = menu
     }
 
     @objc private func startInstance(_ sender: NSMenuItem) {

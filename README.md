@@ -26,7 +26,7 @@ Download the latest release DMG and drag ColimaBar to your Applications folder.
 ### Build from Source
 
 ```bash
-git clone https://github.com/yourusername/colimabar.git
+git clone https://github.com/tdi/colimabar.git
 cd colimabar
 ./build-app.sh
 open ColimaBar.app
