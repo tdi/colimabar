@@ -8,8 +8,7 @@ A native macOS menu bar app for [Colima](https://github.com/abiosoft/colima) - t
 
 - Shows all Colima instances in the menu bar
 - Start, Stop, and Restart each instance individually
-- Open a shell into a running instance in your preferred terminal
-  (Terminal, iTerm, Ghostty, kitty, WezTerm, or Alacritty)
+- Open a shell into a running instance (via Terminal)
 - Start All / Stop All when running multiple instances
 - Create new instances (name, CPUs, memory, disk) and delete existing ones
 - View instance details (arch, CPUs, memory, disk)
@@ -56,7 +55,7 @@ Click the icon to:
 - Expand an instance submenu for details and controls (Start, Stop, Restart, Open Shell, Delete)
 - Start All / Stop All instances
 - Create a new instance
-- Set the auto-refresh interval and the terminal used for Open Shell
+- Set the auto-refresh interval
 - Toggle Launch at Login
 - Refresh status manually
 - Quit the app

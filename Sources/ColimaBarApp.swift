@@ -109,7 +109,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(refreshItem)
 
         menu.addItem(refreshIntervalMenuItem())
-        menu.addItem(terminalMenuItem())
 
         let launchItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         launchItem.target = self
@@ -285,91 +284,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openShell(profile: profile)
     }
 
-    /// Open the configured terminal and run `colima ssh` for the profile, using
-    /// the resolved colima path so it works regardless of the interactive
-    /// shell's PATH. Terminal and iTerm are driven with AppleScript; other
-    /// emulators are launched with the command passed as an argument.
+    /// Open the user's Terminal and run `colima ssh` for the profile. Uses the
+    /// resolved colima path so it works regardless of the interactive shell's
+    /// PATH. The profile is single-quoted; the whole command is escaped for the
+    /// AppleScript string literal.
     private func openShell(profile: String) {
-        let terminal = selectedTerminal
-        let sshArgs = [colimaManager.executablePath, "ssh", "-p", profile]
-
-        if terminal.usesAppleScript {
-            let command = "\(colimaManager.executablePath) ssh -p '\(profile)'"
-            runShellAppleScript(terminal: terminal, command: command, profile: profile)
-        } else {
-            launchTerminal(terminal, args: terminal.launchArgs(forCommand: sshArgs), profile: profile)
-        }
-    }
-
-    private func runShellAppleScript(terminal: TerminalApp, command: String, profile: String) {
+        let command = "\(colimaManager.executablePath) ssh -p '\(profile)'"
         let escaped = command
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
-        let source = terminal.appleScriptSource(escapedCommand: escaped)
+        let source = """
+        tell application "Terminal"
+            activate
+            do script "\(escaped)"
+        end tell
+        """
 
         var error: NSDictionary?
         NSAppleScript(source: source)?.executeAndReturnError(&error)
         if let error = error {
-            showShellError(
-                profile: profile,
-                message: error[NSAppleScript.errorMessage] as? String
-                    ?? "\(terminal.displayName) could not be controlled. Grant automation access in System Settings › Privacy & Security › Automation."
-            )
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "Could not open a shell for “\(profile)”"
+            alert.informativeText = error[NSAppleScript.errorMessage] as? String
+                ?? "Terminal could not be controlled. Grant automation access in System Settings › Privacy & Security › Automation."
+            alert.runModal()
         }
-    }
-
-    private func launchTerminal(_ terminal: TerminalApp, args: [String], profile: String) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = ["-n", "-b", terminal.bundleIdentifier, "--args"] + args
-        do {
-            try process.run()
-        } catch {
-            showShellError(profile: profile, message: error.localizedDescription)
-        }
-    }
-
-    private func showShellError(profile: String, message: String) {
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "Could not open a shell for “\(profile)”"
-        alert.informativeText = message
-        alert.runModal()
-    }
-
-    private static let terminalKey = "terminalApp"
-
-    private func isInstalled(_ terminal: TerminalApp) -> Bool {
-        NSWorkspace.shared.urlForApplication(withBundleIdentifier: terminal.bundleIdentifier) != nil
-    }
-
-    private var selectedTerminal: TerminalApp {
-        if let raw = UserDefaults.standard.string(forKey: Self.terminalKey),
-           let terminal = TerminalApp(rawValue: raw), isInstalled(terminal) {
-            return terminal
-        }
-        return TerminalApp.allCases.first(where: isInstalled) ?? .terminal
-    }
-
-    private func terminalMenuItem() -> NSMenuItem {
-        let submenu = NSMenu()
-        let current = selectedTerminal
-        for terminal in TerminalApp.allCases where isInstalled(terminal) {
-            let item = NSMenuItem(title: terminal.displayName, action: #selector(setTerminal(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = terminal.rawValue
-            item.state = terminal == current ? .on : .off
-            submenu.addItem(item)
-        }
-        let item = NSMenuItem(title: "Shell Terminal", action: nil, keyEquivalent: "")
-        item.submenu = submenu
-        return item
-    }
-
-    @objc private func setTerminal(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String else { return }
-        UserDefaults.standard.set(raw, forKey: Self.terminalKey)
-        setupMenu()
     }
 
     @objc private func startAllInstances() {
@@ -450,77 +390,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quitApp() {
         NSApplication.shared.terminate(nil)
-    }
-}
-
-/// A terminal emulator ColimaBar can open an SSH session in. Terminal and iTerm
-/// are scripted with AppleScript; the rest are launched via `open`, passing the
-/// command as arguments in each app's expected form.
-enum TerminalApp: String, CaseIterable {
-    case terminal
-    case iterm
-    case ghostty
-    case kitty
-    case wezterm
-    case alacritty
-
-    var displayName: String {
-        switch self {
-        case .terminal: return "Terminal"
-        case .iterm: return "iTerm"
-        case .ghostty: return "Ghostty"
-        case .kitty: return "kitty"
-        case .wezterm: return "WezTerm"
-        case .alacritty: return "Alacritty"
-        }
-    }
-
-    var bundleIdentifier: String {
-        switch self {
-        case .terminal: return "com.apple.Terminal"
-        case .iterm: return "com.googlecode.iterm2"
-        case .ghostty: return "com.mitchellh.ghostty"
-        case .kitty: return "net.kovidgoyal.kitty"
-        case .wezterm: return "com.github.wez.wezterm"
-        case .alacritty: return "org.alacritty"
-        }
-    }
-
-    var usesAppleScript: Bool {
-        self == .terminal || self == .iterm
-    }
-
-    /// Arguments passed after `open -n -b <id> --args` so the emulator runs the
-    /// given command. `command` is [executable, arg, ...].
-    func launchArgs(forCommand command: [String]) -> [String] {
-        switch self {
-        case .ghostty, .alacritty:
-            return ["-e"] + command
-        case .kitty:
-            return command
-        case .wezterm:
-            return ["start", "--"] + command
-        case .terminal, .iterm:
-            return []
-        }
-    }
-
-    func appleScriptSource(escapedCommand: String) -> String {
-        switch self {
-        case .iterm:
-            return """
-            tell application "iTerm"
-                activate
-                create window with default profile command "\(escapedCommand)"
-            end tell
-            """
-        default:
-            return """
-            tell application "Terminal"
-                activate
-                do script "\(escapedCommand)"
-            end tell
-            """
-        }
     }
 }
