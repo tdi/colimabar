@@ -47,6 +47,10 @@ final class ColimaManager: ObservableObject {
     private let colimaPath: String
     private var statusCheckTimer: Timer?
 
+    /// Resolved path to the colima executable, for callers that need to build
+    /// their own command (e.g. opening an SSH session in Terminal).
+    var executablePath: String { colimaPath }
+
     var hasRunningInstance: Bool {
         instances.contains { $0.status.isRunning }
     }

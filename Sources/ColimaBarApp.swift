@@ -221,6 +221,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     restartItem.target = self
                     restartItem.representedObject = instance.name
                     instanceMenu.addItem(restartItem)
+
+                    let shellItem = NSMenuItem(title: "Open Shell", action: #selector(sshInstance(_:)), keyEquivalent: "")
+                    shellItem.target = self
+                    shellItem.representedObject = instance.name
+                    instanceMenu.addItem(shellItem)
                 } else {
                     let transitionItem = NSMenuItem(title: instance.status.rawValue, action: nil, keyEquivalent: "")
                     transitionItem.isEnabled = false
@@ -271,6 +276,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if alert.runModal() == .alertFirstButtonReturn {
             colimaManager.delete(profile: profile)
+        }
+    }
+
+    @objc private func sshInstance(_ sender: NSMenuItem) {
+        guard let profile = sender.representedObject as? String else { return }
+        openShell(profile: profile)
+    }
+
+    /// Open the user's Terminal and run `colima ssh` for the profile. Uses the
+    /// resolved colima path so it works regardless of the interactive shell's
+    /// PATH. The profile is single-quoted; the whole command is escaped for the
+    /// AppleScript string literal.
+    private func openShell(profile: String) {
+        let command = "\(colimaManager.executablePath) ssh -p '\(profile)'"
+        let escaped = command
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let source = """
+        tell application "Terminal"
+            activate
+            do script "\(escaped)"
+        end tell
+        """
+
+        var error: NSDictionary?
+        NSAppleScript(source: source)?.executeAndReturnError(&error)
+        if let error = error {
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "Could not open a shell for “\(profile)”"
+            alert.informativeText = error[NSAppleScript.errorMessage] as? String
+                ?? "Terminal could not be controlled. Grant automation access in System Settings › Privacy & Security › Automation."
+            alert.runModal()
         }
     }
 

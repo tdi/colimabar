@@ -8,6 +8,7 @@ A native macOS menu bar app for [Colima](https://github.com/abiosoft/colima) - t
 
 - Shows all Colima instances in the menu bar
 - Start, Stop, and Restart each instance individually
+- Open a shell into a running instance (via Terminal)
 - Start All / Stop All when running multiple instances
 - Create new instances (name, CPUs, memory, disk) and delete existing ones
 - View instance details (arch, CPUs, memory, disk)
@@ -51,7 +52,7 @@ Once running, ColimaBar appears in your menu bar:
 
 Click the icon to:
 - View all Colima instances
-- Expand an instance submenu for details and controls (Start, Stop, Restart, Delete)
+- Expand an instance submenu for details and controls (Start, Stop, Restart, Open Shell, Delete)
 - Start All / Stop All instances
 - Create a new instance
 - Set the auto-refresh interval
