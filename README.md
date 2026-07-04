@@ -45,20 +45,49 @@ To create a DMG:
 
 ## Usage
 
-Once running, ColimaBar appears in your menu bar:
+Once running, ColimaBar appears in your menu bar. The icon reflects the
+overall state of your instances:
 
-- **Filled box icon** - Colima is running
-- **Empty box icon** - Colima is stopped
+| Icon | Meaning |
+|------|---------|
+| Filled box | At least one instance is running |
+| Empty box | All instances are stopped |
+| Box with arrow | An instance is starting or stopping |
 
-Click the icon to:
-- View all Colima instances
-- Expand an instance submenu for details and controls (Start, Stop, Restart, Open Shell, Delete)
-- Start All / Stop All instances
-- Create a new instance
-- Set the auto-refresh interval
-- Toggle Launch at Login
-- Refresh status manually
-- Quit the app
+Click the icon to open the menu. Each instance is a row (`●` running, `○`
+stopped) that expands into its own submenu.
+
+### Managing instances
+
+Open an instance's submenu to see its details (status, arch, CPUs, memory,
+disk) and act on it:
+
+- **Start** / **Stop** the instance
+- **Restart** a running instance
+- **Open Shell** — launch Terminal and SSH into the running instance
+- **Delete…** — permanently remove the instance and its data (asks for
+  confirmation first)
+
+When more than one instance exists, **Start All** and **Stop All** appear in
+the main menu.
+
+### Creating an instance
+
+Choose **New Instance…** and fill in a name, CPU count, memory (GiB), and disk
+size (GiB). ColimaBar creates it with `colima start` using those resources.
+
+### Open Shell permissions
+
+The first time you use **Open Shell**, macOS asks ColimaBar for permission to
+control Terminal. Allow it. If it was previously denied, re-enable it under
+System Settings › Privacy & Security › Automation › ColimaBar.
+
+### Preferences
+
+- **Refresh Interval** — how often status is polled (5 / 10 / 30 / 60 seconds).
+  The choice is remembered across launches. Polling pauses while an instance is
+  starting or stopping so transitions aren't interrupted.
+- **Launch at Login** — start ColimaBar automatically when you log in.
 
 ### Keyboard Shortcuts
 
