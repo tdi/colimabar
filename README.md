@@ -28,6 +28,18 @@ A native macOS menu bar app for [Colima](https://github.com/abiosoft/colima) - t
 
 Download the latest release DMG and drag ColimaBar to your Applications folder.
 
+### First launch
+
+ColimaBar is ad-hoc signed, not notarized by Apple, so on first launch macOS
+shows an "unidentified developer" warning. Right-click the app in Applications
+and choose **Open**, then confirm. You only need to do this once.
+
+If macOS still refuses to open it, clear the download quarantine flag:
+
+```
+xattr -dr com.apple.quarantine /Applications/ColimaBar.app
+```
+
 ### Build from Source
 
 ```bash
