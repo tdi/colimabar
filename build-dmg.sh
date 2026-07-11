@@ -2,39 +2,31 @@
 set -e
 
 APP_NAME="ColimaBar"
-DMG_NAME="$APP_NAME.dmg"
 VOLUME_NAME="$APP_NAME"
 APP_BUNDLE="$APP_NAME.app"
 
-# Build the app first if needed
-if [ ! -d "$APP_BUNDLE" ]; then
-    echo "Building app first..."
-    ./build-app.sh
-fi
+RAW_VERSION="${1:-0.0.0-dev}"
+DMG_NAME="$APP_NAME-$RAW_VERSION.dmg"
 
-echo "Creating DMG..."
+# Always rebuild the bundle so the DMG can never contain a stale app.
+echo "Building app bundle..."
+./build-app.sh "$RAW_VERSION"
 
-# Clean up any existing DMG
+echo "Creating DMG $DMG_NAME..."
 rm -f "$DMG_NAME"
 
-# Create a temporary directory for DMG contents
 DMG_TEMP="dmg_temp"
 rm -rf "$DMG_TEMP"
 mkdir -p "$DMG_TEMP"
 
-# Copy the app bundle
 cp -R "$APP_BUNDLE" "$DMG_TEMP/"
-
-# Create a symbolic link to Applications
 ln -s /Applications "$DMG_TEMP/Applications"
 
-# Create the DMG
 hdiutil create -volname "$VOLUME_NAME" \
     -srcfolder "$DMG_TEMP" \
     -ov -format UDZO \
     "$DMG_NAME"
 
-# Clean up
 rm -rf "$DMG_TEMP"
 
 echo ""

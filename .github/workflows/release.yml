@@ -16,58 +16,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Get version from tag
-        id: version
+      - name: Build DMG
         env:
-          REF_NAME: ${{ github.ref_name }}
-        run: echo "VERSION=$REF_NAME" >> $GITHUB_OUTPUT
-
-      - name: Update version in Info.plist
-        env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
-        run: |
-          VERSION_NUMBER="${VERSION#v}"
-          sed -i '' "s/<string>1.0.0<\/string>/<string>${VERSION_NUMBER}<\/string>/g" Sources/Info.plist
-
-      - name: Build app
-        run: |
-          swift build -c release
-
-          mkdir -p ColimaBar.app/Contents/MacOS
-          mkdir -p ColimaBar.app/Contents/Resources
-
-          cp .build/release/ColimaBar ColimaBar.app/Contents/MacOS/
-          cp Sources/Info.plist ColimaBar.app/Contents/
-
-      - name: Create DMG
-        env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
-        run: |
-          DMG_NAME="ColimaBar-${VERSION}.dmg"
-
-          mkdir -p dmg_temp
-          cp -R ColimaBar.app dmg_temp/
-          ln -s /Applications dmg_temp/Applications
-
-          hdiutil create -volname "ColimaBar" \
-            -srcfolder dmg_temp \
-            -ov -format UDZO \
-            "$DMG_NAME"
-
-          echo "DMG_NAME=$DMG_NAME" >> $GITHUB_ENV
-
-      - name: Create ZIP
-        env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
-        run: |
-          ZIP_NAME="ColimaBar-${VERSION}.zip"
-          zip "$ZIP_NAME" "$DMG_NAME"
-          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+          VERSION: ${{ github.ref_name }}
+        run: ./build-dmg.sh "$VERSION"
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v1
         with:
-          files: |          
-            ${{ env.ZIP_NAME }}
+          files: ColimaBar-${{ github.ref_name }}.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
